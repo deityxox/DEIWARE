@@ -117,6 +117,7 @@ ipcMain.handle('fetch-scripts', async (event, repoUrl) => {
 // GitHub'dan klasör içeriğini recursive oku
 ipcMain.handle('fetch-scripts-recursive', async (event, repoUrl, githubToken = '') => {
   const allScripts = [];
+  let lastRateLimit = { remaining: null, limit: null, reset: null };
   
   const fetchFolder = async (url) => {
     return new Promise((resolve, reject) => {
@@ -140,9 +141,17 @@ ipcMain.handle('fetch-scripts-recursive', async (event, repoUrl, githubToken = '
         (res) => {
           let data = '';
           
-          // Rate limit bilgilerini logla
-          console.log('Rate Limit Remaining:', res.headers['x-ratelimit-remaining']);
-          console.log('Rate Limit Reset:', new Date(res.headers['x-ratelimit-reset'] * 1000));
+          // Rate limit bilgilerini yakala
+          const remaining = res.headers['x-ratelimit-remaining'];
+          const limit = res.headers['x-ratelimit-limit'];
+          const reset = res.headers['x-ratelimit-reset'];
+          if (remaining != null) {
+            lastRateLimit = {
+              remaining: parseInt(remaining, 10),
+              limit: parseInt(limit, 10) || null,
+              reset: reset ? parseInt(reset, 10) * 1000 : null,
+            };
+          }
           
           // HTTP hata kodlarını kontrol et
           if (res.statusCode === 403) {
@@ -218,7 +227,7 @@ ipcMain.handle('fetch-scripts-recursive', async (event, repoUrl, githubToken = '
 
   const processItems = async (items, basePath = '') => {
     for (const item of items) {
-      if (item.type === 'file' && (item.name.endsWith('.ps1') || item.name.endsWith('.reg'))) {
+      if (item.type === 'file' && (item.name.endsWith('.ps1') || item.name.endsWith('.reg') || item.name.endsWith('.bat') || item.name.endsWith('.cmd'))) {
         // Dosya path'ine base path ekle
         allScripts.push({
           ...item,
@@ -283,12 +292,12 @@ ipcMain.handle('fetch-scripts-recursive', async (event, repoUrl, githubToken = '
     if (allScripts.length === 0) {
       return { 
         error: 'Script bulunamadı', 
-        details: 'Klasörde .ps1 veya .reg dosyası bulunamadı' 
+        details: 'Klasörde .ps1, .reg, .bat veya .cmd dosyası bulunamadı' 
       };
     }
     
     console.log(`Toplam ${allScripts.length} script bulundu`);
-    return allScripts;
+    return { scripts: allScripts, rateLimit: lastRateLimit };
   } catch (error) {
     console.error('fetch-scripts-recursive error:', error);
     return { error: error.error || 'Hata', details: error.details || String(error) };
@@ -376,6 +385,41 @@ ipcMain.handle('run-registry', async (event, regContent) => {
             success: true,
             output: 'Registry başarıyla uygulandı.',
             error: '',
+          });
+        }
+      }
+    );
+  });
+});
+
+// Batch/CMD dosyası çalıştır
+ipcMain.handle('run-batch', async (event, scriptContent, fileName) => {
+  return new Promise((resolve) => {
+    const ext = fileName && fileName.endsWith('.cmd') ? '.cmd' : '.bat';
+    const tempFile = path.join(app.getPath('temp'), `deity-batch-${Date.now()}${ext}`);
+    fs.writeFileSync(tempFile, scriptContent, 'utf8');
+
+    exec(
+      `cmd.exe /c "${tempFile}"`,
+      { maxBuffer: 1024 * 1024 * 10 },
+      (error, stdout, stderr) => {
+        try {
+          fs.unlinkSync(tempFile);
+        } catch (e) {
+          // Dosya silme hatası önemli değil
+        }
+
+        if (error) {
+          resolve({
+            success: false,
+            output: stdout || '',
+            error: stderr || error.message,
+          });
+        } else {
+          resolve({
+            success: true,
+            output: stdout || 'Batch dosyası başarıyla çalıştırıldı.',
+            error: stderr || '',
           });
         }
       }

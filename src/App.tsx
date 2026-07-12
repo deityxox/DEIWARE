@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { TitleBar } from './components/TitleBar';
+import { Sidebar } from './components/Sidebar';
 import { ScriptCard } from './components/ScriptCard';
 import { LogPanel } from './components/LogPanel';
+import { StatusBar } from './components/StatusBar';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { ScrollArea } from './components/ui/scroll-area';
 import { ExecutionLog, ScriptFile, Category } from './types';
 import {
@@ -15,16 +15,13 @@ import {
   Sun,
   Loader2,
   CheckCircle2,
-  AlertCircle,
-  FileCode,
-  Terminal,
-  Settings as SettingsIcon,
-  Star,
-  User,
+  Search,
 } from 'lucide-react';
 
 function App() {
+  // ─── State ───
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [activeView, setActiveView] = useState<'scripts' | 'logs' | 'settings'>('scripts');
   const [defaultCategories, setDefaultCategories] = useState<Category[]>([]);
   const [userCategories, setUserCategories] = useState<Category[]>([]);
   const [selectedScripts, setSelectedScripts] = useState<Set<string>>(new Set());
@@ -34,15 +31,54 @@ function App() {
   const [runningScripts, setRunningScripts] = useState<Set<string>>(new Set());
   const [initStatus, setInitStatus] = useState<'pending' | 'success' | 'error'>('pending');
   const [defaultRepoUrl] = useState('https://github.com/deityxox/DEIWARE/tree/main/scripts');
-  const [userRepoUrl, setUserRepoUrl] = useState('');
+  const [userRepoUrl, setUserRepoUrl] = useState(() => {
+    return localStorage.getItem('userRepoUrl') || '';
+  });
   const [githubToken, setGithubToken] = useState(() => {
-    // localStorage'dan token'ı yükle
     return localStorage.getItem('githubToken') || '';
   });
-  const [activeTab, setActiveTab] = useState('scripts');
   const [scriptTab, setScriptTab] = useState<'default' | 'user'>('default');
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [sidebarSearch, setSidebarSearch] = useState('');
+  const [scriptSearch, setScriptSearch] = useState('');
+  const [lastRunTime, setLastRunTime] = useState<Date | undefined>();
+  const [rateLimit, setRateLimit] = useState<{ remaining: number | null; limit: number | null; reset: number | null } | null>(null);
 
-  // GitHub token değiştiğinde localStorage'a kaydet
+  // ─── Derived ───
+  const currentCategories = scriptTab === 'default' ? defaultCategories : userCategories;
+  const isLoadingScripts = scriptTab === 'default' ? isLoadingDefault : isLoadingUser;
+
+  const activeCategoryData = useMemo(
+    () => currentCategories.find((c) => c.id === activeCategory),
+    [currentCategories, activeCategory]
+  );
+
+  const filteredScripts = useMemo(() => {
+    if (!activeCategoryData) return [];
+    if (!scriptSearch.trim()) return activeCategoryData.scripts;
+    const q = scriptSearch.toLowerCase();
+    return activeCategoryData.scripts.filter(
+      (s) => s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q)
+    );
+  }, [activeCategoryData, scriptSearch]);
+
+  const totalScripts = useMemo(
+    () => currentCategories.reduce((sum, c) => sum + c.scripts.length, 0),
+    [currentCategories]
+  );
+
+  // ─── Effects ───
+
+  // Persist userRepoUrl
+  useEffect(() => {
+    if (userRepoUrl) {
+      localStorage.setItem('userRepoUrl', userRepoUrl);
+    } else {
+      localStorage.removeItem('userRepoUrl');
+    }
+  }, [userRepoUrl]);
+
+  // Persist githubToken
   useEffect(() => {
     if (githubToken) {
       localStorage.setItem('githubToken', githubToken);
@@ -51,8 +87,12 @@ function App() {
     }
   }, [githubToken]);
 
-  // Sistem temasını al
+  // Guard against StrictMode double-fire
+  const hasInitialized = useRef(false);
+
+  // System theme
   useEffect(() => {
+    if (hasInitialized.current) return;
     const initTheme = async () => {
       try {
         const systemTheme = await window.electronAPI.getSystemTheme();
@@ -65,8 +105,9 @@ function App() {
     initTheme();
   }, []);
 
-  // ExecutionPolicy ayarla
+  // ExecutionPolicy init
   useEffect(() => {
+    if (hasInitialized.current) return;
     const initPolicy = async () => {
       try {
         const result = await window.electronAPI.initExecutionPolicy();
@@ -87,21 +128,33 @@ function App() {
           });
         }
       } catch (error) {
-        setInitStatus('success');
+        setInitStatus('error');
         addLog({
           scriptName: 'Sistem Başlatma',
-          success: true,
-          output: 'Sistem hazır. Scriptler -ExecutionPolicy Bypass ile çalıştırılacak.',
+          success: false,
+          output: '',
+          error: 'ExecutionPolicy başlatılamadı: ' + String(error),
         });
       }
     };
     initPolicy();
   }, []);
 
-  // Default scriptleri otomatik yükle
+  // Auto-load default scripts
   useEffect(() => {
+    if (hasInitialized.current) return;
+    hasInitialized.current = true;
     loadDefaultScripts();
   }, []);
+
+  // Auto-select first category when categories load
+  useEffect(() => {
+    if (currentCategories.length > 0 && !currentCategories.find((c) => c.id === activeCategory)) {
+      setActiveCategory(currentCategories[0].id);
+    }
+  }, [currentCategories, activeCategory]);
+
+  // ─── Handlers ───
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
@@ -118,99 +171,89 @@ function App() {
     setLogs((prev) => [newLog, ...prev]);
   };
 
-  // Akıllı kategorize fonksiyonu
+  const clearLogs = () => setLogs([]);
+
   const smartCategorize = (scriptName: string, folderPath: string): string => {
-    // Önce klasör isminden kategori bulmaya çalış
-    const pathParts = folderPath.split('/').filter(p => p);
-    
-    // Eğer klasör varsa ve anlamlı bir isimse kullan
+    const pathParts = folderPath.split('/').filter((p) => p);
+
     if (pathParts.length > 0) {
       const folderName = pathParts[pathParts.length - 1];
-      
-      // Numaralı klasör isimleri (01-Security gibi) temizle
       const cleanFolderName = folderName.replace(/^\d+[-_\s]*/, '');
-      
-      // Tire ve alt çizgileri boşluğa çevir, her kelimenin ilk harfini büyük yap
+
       if (cleanFolderName.length > 2) {
         return cleanFolderName
           .split(/[-_]/)
-          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
           .join(' ');
       }
     }
-    
-    // Klasörden kategori bulunamazsa, script isminden analiz et
+
     const name = scriptName.toLowerCase();
-    
-    // Güvenlik
-    if (name.includes('defender') || name.includes('firewall') || name.includes('security') || 
+
+    if (name.includes('defender') || name.includes('firewall') || name.includes('security') ||
         name.includes('uac') || name.includes('hvci') || name.includes('integrity')) {
       return 'Security';
     }
-    
-    // Performans
-    if (name.includes('performance') || name.includes('p0') || name.includes('msi') || 
+    if (name.includes('performance') || name.includes('p0') || name.includes('msi') ||
         name.includes('parking') || name.includes('timer') || name.includes('boost') ||
         name.includes('optimization') || name.includes('optimize')) {
       return 'Performance';
     }
-    
-    // Kullanıcı Arayüzü
     if (name.includes('startmenu') || name.includes('taskbar') || name.includes('menu') ||
         name.includes('copilot') || name.includes('widget') || name.includes('context') ||
         name.includes('theme') || name.includes('ui') || name.includes('interface')) {
       return 'User Interface';
     }
-    
-    // Ağ ve Güç
     if (name.includes('network') || name.includes('power') || name.includes('adapter') ||
         name.includes('ipv4') || name.includes('wake') || name.includes('device manager')) {
       return 'Network & Power';
     }
-    
-    // Bloatware
     if (name.includes('bloatware') || name.includes('uwp') || name.includes('background') ||
         name.includes('remove') || name.includes('uninstall') || name.includes('clean')) {
       return 'Bloatware Management';
     }
-    
-    // Uygulamalar
     if (name.includes('edge') || name.includes('gamebar') || name.includes('xbox') ||
         name.includes('browser') || name.includes('chrome') || name.includes('brave')) {
       return 'Applications';
     }
-    
-    // Sistem Bileşenleri
     if (name.includes('directx') || name.includes('cpp') || name.includes('dotnet') ||
         name.includes('framework') || name.includes('update') || name.includes('activation') ||
         name.includes('windows')) {
       return 'System Components';
     }
-    
-    // GPU/Ekran
     if (name.includes('nvidia') || name.includes('gpu') || name.includes('display') ||
         name.includes('resolution') || name.includes('hdcp') || name.includes('hags')) {
       return 'Graphics & Display';
     }
-    
-    // Mouse/Input
     if (name.includes('mouse') || name.includes('scaling') || name.includes('accel')) {
       return 'Input Devices';
     }
-    
-    // Varsayılan
+
     return 'Miscellaneous';
+  };
+
+  const getCategoryIcon = (category: string): string => {
+    const lower = category.toLowerCase();
+    if (lower.includes('security')) return '🔒';
+    if (lower.includes('performance')) return '⚡';
+    if (lower.includes('interface') || lower.includes('ui')) return '🎨';
+    if (lower.includes('network') || lower.includes('power')) return '🌐';
+    if (lower.includes('bloatware') || lower.includes('management')) return '🧹';
+    if (lower.includes('application')) return '📱';
+    if (lower.includes('system') || lower.includes('component')) return '⚙️';
+    if (lower.includes('graphic') || lower.includes('display')) return '🖥️';
+    if (lower.includes('input') || lower.includes('device')) return '🖱️';
+    if (lower.includes('miscellaneous')) return '📦';
+    return '📄';
   };
 
   const loadScriptsFromGithub = async (repoUrl: string, isDefault: boolean = false) => {
     const setLoading = isDefault ? setIsLoadingDefault : setIsLoadingUser;
     const setCategories = isDefault ? setDefaultCategories : setUserCategories;
-    
+
     setLoading(true);
     try {
       const response = await window.electronAPI.fetchScriptsRecursive(repoUrl, githubToken);
-
-      console.log('GitHub Response:', response);
 
       if (response.error) {
         addLog({
@@ -222,21 +265,26 @@ function App() {
         return;
       }
 
-      if (Array.isArray(response)) {
-        const scripts: ScriptFile[] = response.map((file) => {
-          // Klasör yolunu al (dosya adı olmadan)
+      if (response.scripts && Array.isArray(response.scripts)) {
+        // Rate limit bilgisini kaydet
+        if (response.rateLimit) {
+          setRateLimit(response.rateLimit);
+        }
+
+        const scripts: ScriptFile[] = response.scripts.map((file: any) => {
           const pathParts = file.path.split('/');
           const folderPath = pathParts.slice(0, -1).join('/');
           const category = smartCategorize(file.name, folderPath);
-          
-          // Debug log
-          console.log('Script:', file.name, '| Folder:', folderPath, '| Category:', category);
-          
+
           return {
             name: file.name,
             path: file.path,
-            type: file.name.endsWith('.ps1') ? 'powershell' : 'registry',
-            category: category,
+            type: file.name.endsWith('.ps1')
+              ? 'powershell'
+              : (file.name.endsWith('.bat') || file.name.endsWith('.cmd'))
+                ? 'batch'
+                : 'registry',
+            category,
             downloadUrl: file.download_url,
           };
         });
@@ -246,12 +294,11 @@ function App() {
             scriptName: isDefault ? 'Default Scriptler' : 'Kullanıcı Scriptleri',
             success: false,
             output: '',
-            error: 'Repo içinde hiç .ps1 veya .reg dosyası bulunamadı',
+            error: 'Repo içinde hiç .ps1, .reg, .bat veya .cmd dosyası bulunamadı',
           });
           return;
         }
 
-        // Kategorilere göre grupla
         const categoriesMap = new Map<string, ScriptFile[]>();
         scripts.forEach((script) => {
           if (!categoriesMap.has(script.category)) {
@@ -260,7 +307,6 @@ function App() {
           categoriesMap.get(script.category)!.push(script);
         });
 
-        // Kategorileri alfabetik sırala (Miscellaneous en sona)
         const sortedCategories = Array.from(categoriesMap.entries()).sort((a, b) => {
           if (a[0] === 'Miscellaneous') return 1;
           if (b[0] === 'Miscellaneous') return -1;
@@ -271,14 +317,20 @@ function App() {
           id: name.toLowerCase().replace(/\s+/g, '-'),
           name,
           icon: getCategoryIcon(name),
-          scripts: scripts.sort((a, b) => a.name.localeCompare(b.name)), // Scriptleri alfabetik sırala
+          scripts: scripts.sort((a, b) => a.name.localeCompare(b.name)),
         }));
 
         setCategories(newCategories);
+
+        const rl = response.rateLimit;
+        const rlText = rl && rl.remaining != null
+          ? ` • API: ${rl.remaining}/${rl.limit || '?'} kalan`
+          : '';
+
         addLog({
           scriptName: isDefault ? 'Default Scriptler' : 'Kullanıcı Scriptleri',
           success: true,
-          output: `${scripts.length} script yüklendi • ${newCategories.length} kategori oluşturuldu`,
+          output: `${scripts.length} script yüklendi • ${newCategories.length} kategori${rlText}`,
         });
       } else {
         addLog({
@@ -310,47 +362,11 @@ function App() {
         scriptName: 'Kullanıcı Scriptleri',
         success: false,
         output: '',
-        error: 'Lütfen önce ayarlar sekmesinden repo URL\'i girin',
+        error: "Lütfen önce ayarlar sekmesinden repo URL'i girin",
       });
       return;
     }
     loadScriptsFromGithub(userRepoUrl, false);
-  };
-
-  const getCategoryIcon = (category: string): string => {
-    const lower = category.toLowerCase();
-    
-    // Güvenlik
-    if (lower.includes('security')) return '🔒';
-    
-    // Performans
-    if (lower.includes('performance')) return '⚡';
-    
-    // Kullanıcı Arayüzü
-    if (lower.includes('interface') || lower.includes('ui')) return '🎨';
-    
-    // Ağ ve Güç
-    if (lower.includes('network') || lower.includes('power')) return '🌐';
-    
-    // Bloatware
-    if (lower.includes('bloatware') || lower.includes('management')) return '🧹';
-    
-    // Uygulamalar
-    if (lower.includes('application')) return '📱';
-    
-    // Sistem Bileşenleri
-    if (lower.includes('system') || lower.includes('component')) return '⚙️';
-    
-    // GPU/Ekran
-    if (lower.includes('graphic') || lower.includes('display')) return '🖥️';
-    
-    // Input Devices
-    if (lower.includes('input') || lower.includes('device')) return '🖱️';
-    
-    // Diğer
-    if (lower.includes('miscellaneous')) return '📦';
-    
-    return '�';
   };
 
   const toggleScriptSelection = (scriptPath: string) => {
@@ -380,6 +396,8 @@ function App() {
       let result;
       if (script.type === 'powershell') {
         result = await window.electronAPI.runPowerShell(script.content);
+      } else if (script.type === 'batch') {
+        result = await window.electronAPI.runBatch(script.content, script.name);
       } else {
         result = await window.electronAPI.runRegistry(script.content);
       }
@@ -390,6 +408,8 @@ function App() {
         output: result.output,
         error: result.error,
       });
+
+      setLastRunTime(new Date());
     } catch (error) {
       addLog({
         scriptName: script.name,
@@ -416,323 +436,318 @@ function App() {
     }
   };
 
-  const selectedCount = selectedScripts.size;
-  const currentCategories = scriptTab === 'default' ? defaultCategories : userCategories;
-  const isLoadingScripts = scriptTab === 'default' ? isLoadingDefault : isLoadingUser;
-
   const handleSaveSettings = () => {
+    localStorage.setItem('userRepoUrl', userRepoUrl);
+    if (githubToken) {
+      localStorage.setItem('githubToken', githubToken);
+    }
     addLog({
       scriptName: 'Ayarlar',
       success: true,
       output: 'Ayarlar kaydedildi',
     });
-    setActiveTab('scripts');
   };
 
+  const selectedCount = selectedScripts.size;
+
+  // ─── Render ───
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground">
+    <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
       <TitleBar />
 
-      <div className="flex-1 flex flex-col p-6 gap-6 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-              DEIWARE
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Windows Script Management Tool
-            </p>
-          </div>
+      <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar */}
+        <Sidebar
+          activeView={activeView}
+          onViewChange={setActiveView}
+          categories={currentCategories}
+          activeCategory={activeCategory}
+          onCategoryChange={setActiveCategory}
+          scriptTab={scriptTab}
+          onScriptTabChange={(tab) => {
+            setScriptTab(tab);
+            setActiveCategory(null);
+            setSidebarSearch('');
+          }}
+          searchQuery={sidebarSearch}
+          onSearchChange={setSidebarSearch}
+        />
 
-          <div className="flex items-center gap-2">
-            {initStatus === 'success' && (
-              <div className="flex items-center gap-2 text-green-500 text-sm">
-                <CheckCircle2 className="h-4 w-4" />
-                <span>Sistem Hazır</span>
-              </div>
-            )}
-            {initStatus === 'error' && (
-              <div className="flex items-center gap-2 text-red-500 text-sm">
-                <AlertCircle className="h-4 w-4" />
-                <span>Başlatma Hatası</span>
-              </div>
-            )}
-
-            <Button variant="outline" size="icon" onClick={toggleTheme}>
-              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </Button>
-
-            {activeTab === 'scripts' && (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={scriptTab === 'default' ? loadDefaultScripts : loadUserScripts}
-                  disabled={isLoadingScripts}
-                >
-                  {isLoadingScripts ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : (
-                    <Download className="h-4 w-4 mr-2" />
+        {/* Main Content */}
+        <main className="flex-1 flex flex-col overflow-hidden">
+          {/* ═══ Scripts View ═══ */}
+          {activeView === 'scripts' && (
+            <>
+              {/* Header */}
+              <header className="flex items-center justify-between px-6 py-4 border-b border-border/20">
+                <div>
+                  <h1 className="text-xl font-bold tracking-tight">
+                    {activeCategoryData ? (
+                      <span className="flex items-center gap-2.5">
+                        <span className="text-lg">{activeCategoryData.icon}</span>
+                        {activeCategoryData.name}
+                      </span>
+                    ) : (
+                      'Scriptler'
+                    )}
+                  </h1>
+                  {activeCategoryData && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {activeCategoryData.scripts.length} script
+                    </p>
                   )}
-                  {scriptTab === 'default' ? 'Default Yenile' : 'Scriptleri Yükle'}
-                </Button>
-
-                {selectedCount > 0 && (
-                  <Button onClick={runSelectedScripts}>
-                    <Play className="h-4 w-4 mr-2" />
-                    Seçilenleri Çalıştır ({selectedCount})
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Main Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-          <TabsList className="grid w-full max-w-md grid-cols-3">
-            <TabsTrigger value="scripts" className="flex items-center gap-2">
-              <FileCode className="h-4 w-4" />
-              Scriptler
-            </TabsTrigger>
-            <TabsTrigger value="logs" className="flex items-center gap-2">
-              <Terminal className="h-4 w-4" />
-              Loglar
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center gap-2">
-              <SettingsIcon className="h-4 w-4" />
-              Ayarlar
-            </TabsTrigger>
-          </TabsList>
-
-          {/* Scripts Tab */}
-          <TabsContent value="scripts" className="flex-1 overflow-hidden mt-6">
-            <Card className="h-full flex flex-col overflow-hidden">
-              <CardHeader className="flex-shrink-0 pb-3">
-                <Tabs value={scriptTab} onValueChange={(v) => setScriptTab(v as 'default' | 'user')}>
-                  <TabsList className="grid w-full max-w-sm grid-cols-2">
-                    <TabsTrigger value="default" className="flex items-center gap-2">
-                      <Star className="h-4 w-4" />
-                      Default Scriptler
-                    </TabsTrigger>
-                    <TabsTrigger value="user" className="flex items-center gap-2">
-                      <User className="h-4 w-4" />
-                      Benim Scriptlerim
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </CardHeader>
-              
-              <CardContent className="flex-1 pt-0 overflow-hidden">
-                {currentCategories.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                    <Download className="h-12 w-12 mb-4 opacity-50" />
-                    <p className="text-sm mb-2">
-                      {scriptTab === 'default' 
-                        ? 'Default scriptler yükleniyor...' 
-                        : 'Henüz kendi scriptleriniz yüklenmedi'}
-                    </p>
-                    <p className="text-xs">
-                      {scriptTab === 'default'
-                        ? 'Lütfen bekleyin'
-                        : 'Ayarlar sekmesinden repo URL\'i girin ve "Scriptleri Yükle" butonuna tıklayın'}
-                    </p>
-                  </div>
-                ) : (
-                  <Tabs defaultValue={currentCategories[0]?.id} className="h-full flex flex-col">
-                    <TabsList className="flex-shrink-0">
-                      {currentCategories.map((cat) => (
-                        <TabsTrigger key={cat.id} value={cat.id}>
-                          {cat.icon} {cat.name}
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
-
-                    {currentCategories.map((cat) => (
-                      <TabsContent
-                        key={cat.id}
-                        value={cat.id}
-                        className="flex-1 overflow-hidden mt-4"
-                      >
-                        <ScrollArea className="h-full">
-                          <div className="space-y-2 pr-4">
-                            {cat.scripts.map((script) => (
-                              <ScriptCard
-                                key={script.path}
-                                script={script}
-                                selected={selectedScripts.has(script.path)}
-                                onToggleSelect={() => toggleScriptSelection(script.path)}
-                                onRun={() => runScript(script)}
-                                isRunning={runningScripts.has(script.path)}
-                              />
-                            ))}
-                          </div>
-                        </ScrollArea>
-                      </TabsContent>
-                    ))}
-                  </Tabs>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Logs Tab */}
-          <TabsContent value="logs" className="flex-1 overflow-hidden mt-6">
-            <LogPanel logs={logs} />
-          </TabsContent>
-
-          {/* Settings Tab */}
-          <TabsContent value="settings" className="flex-1 overflow-hidden mt-6">
-            <Card className="h-full flex flex-col overflow-hidden">
-              <CardHeader>
-                <CardTitle>Ayarlar</CardTitle>
-                <CardDescription>
-                  Uygulama ayarlarınızı yapılandırın
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex-1 overflow-auto space-y-6">
-                {/* Default Repository */}
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-4">Default Repository (Otomatik Yüklenir)</h3>
-                    <div className="space-y-2">
-                      <Input
-                        value={defaultRepoUrl}
-                        disabled
-                        className="bg-muted"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Bu repo otomatik olarak yüklenir ve önerilen scriptleri içerir.
-                      </p>
-                    </div>
-                  </div>
                 </div>
 
-                {/* User GitHub Repository */}
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-4">Kendi GitHub Repository'niz</h3>
+                <div className="flex items-center gap-2">
+                  {/* Script search */}
+                  {activeCategoryData && activeCategoryData.scripts.length > 3 && (
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+                      <input
+                        type="text"
+                        placeholder="Script ara..."
+                        value={scriptSearch}
+                        onChange={(e) => setScriptSearch(e.target.value)}
+                        className="h-9 w-48 pl-8 pr-3 text-sm rounded-lg bg-background border border-border/50 placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-all"
+                      />
+                    </div>
+                  )}
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={scriptTab === 'default' ? loadDefaultScripts : loadUserScripts}
+                    disabled={isLoadingScripts}
+                    className="h-9"
+                  >
+                    {isLoadingScripts ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5 mr-2" />
+                    )}
+                    Yenile
+                  </Button>
+
+                  {selectedCount > 0 && (
+                    <Button onClick={runSelectedScripts} size="sm" className="h-9 gap-2">
+                      <Play className="h-3.5 w-3.5" />
+                      Çalıştır
+                      <span className="bg-primary-foreground/20 text-primary-foreground text-xs px-1.5 py-0.5 rounded-md font-mono">
+                        {selectedCount}
+                      </span>
+                    </Button>
+                  )}
+
+                  <Button variant="outline" size="icon" onClick={toggleTheme} className="h-9 w-9">
+                    {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </header>
+
+              {/* Script Grid */}
+              <ScrollArea className="flex-1">
+                <div className="p-6">
+                  {!activeCategoryData ? (
+                    <div className="flex flex-col items-center justify-center h-64 text-muted-foreground/40">
+                      <Download className="h-12 w-12 mb-4" />
+                      <p className="text-sm font-medium">
+                        {scriptTab === 'default'
+                          ? 'Default scriptler yükleniyor...'
+                          : 'Henüz kendi scriptleriniz yüklenmedi'}
+                      </p>
+                      <p className="text-xs mt-1.5">
+                        {scriptTab === 'default'
+                          ? 'Lütfen bekleyin'
+                          : "Ayarlar sekmesinden repo URL'i girin"}
+                      </p>
+                    </div>
+                  ) : filteredScripts.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-40 text-muted-foreground/40">
+                      <Search className="h-8 w-8 mb-3" />
+                      <p className="text-sm">Eşleşen script bulunamadı</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 stagger-children">
+                      {filteredScripts.map((script) => (
+                        <ScriptCard
+                          key={script.path}
+                          script={script}
+                          selected={selectedScripts.has(script.path)}
+                          onToggleSelect={() => toggleScriptSelection(script.path)}
+                          onRun={() => runScript(script)}
+                          isRunning={runningScripts.has(script.path)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </>
+          )}
+
+          {/* ═══ Logs View ═══ */}
+          {activeView === 'logs' && (
+            <LogPanel logs={logs} onClearLogs={clearLogs} />
+          )}
+
+          {/* ═══ Settings View ═══ */}
+          {activeView === 'settings' && (
+            <ScrollArea className="flex-1">
+              <div className="max-w-2xl mx-auto p-8 space-y-8">
+                {/* Page title */}
+                <div>
+                  <h1 className="text-xl font-bold tracking-tight">Ayarlar</h1>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Uygulama ayarlarınızı yapılandırın
+                  </p>
+                </div>
+
+                {/* Default Repository */}
+                <section className="space-y-3">
+                  <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                    Default Repository
+                  </h3>
+                  <div className="glass-card rounded-xl p-5 space-y-3">
+                    <Input value={defaultRepoUrl} disabled className="bg-muted/50 text-sm" />
+                    <p className="text-xs text-muted-foreground/70">
+                      Bu repo otomatik olarak yüklenir ve önerilen scriptleri içerir.
+                    </p>
+                  </div>
+                </section>
+
+                {/* User Repository */}
+                <section className="space-y-3">
+                  <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                    Kendi Repository'niz
+                  </h3>
+                  <div className="glass-card rounded-xl p-5 space-y-4">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Repository URL</label>
                       <Input
                         placeholder="https://github.com/kullanici/repo/tree/main/scripts"
                         value={userRepoUrl}
                         onChange={(e) => setUserRepoUrl(e.target.value)}
+                        className="text-sm"
                       />
-                      <p className="text-xs text-muted-foreground">
-                        Kendi scriptlerinizi buradan yükleyebilirsiniz.
-                      </p>
-                      <ul className="text-xs text-muted-foreground space-y-1 ml-4">
-                        <li>• https://github.com/kullanici/repo</li>
-                        <li>• https://github.com/kullanici/repo/tree/main</li>
-                        <li>• https://github.com/kullanici/repo/tree/branch/folder</li>
-                      </ul>
+                    </div>
+                    <div className="rounded-lg bg-muted/50 p-4 space-y-2">
+                      <p className="text-xs font-medium text-foreground/80">💡 Nasıl Kullanılır?</p>
+                      <ol className="text-xs text-muted-foreground space-y-1 ml-4 list-decimal">
+                        <li>GitHub'da bir repo oluşturun</li>
+                        <li>.ps1 ve .reg dosyalarınızı organize edin</li>
+                        <li>Repo URL'ini yukarıya girin</li>
+                        <li>Scriptler → Benim sekmesinden yükleyin</li>
+                      </ol>
                     </div>
                   </div>
-
-                  <div className="rounded-lg bg-muted p-4 space-y-2">
-                    <p className="text-sm font-medium">💡 Nasıl Kullanılır?</p>
-                    <ol className="text-xs text-muted-foreground space-y-1 ml-4">
-                      <li>1. GitHub'da bir repo oluşturun</li>
-                      <li>2. .ps1 ve .reg dosyalarınızı istediğiniz klasörlerde organize edin</li>
-                      <li>3. Repo URL'ini yukarıya girin ve kaydedin</li>
-                      <li>4. Scriptler sekmesinden "Benim Scriptlerim" seçin</li>
-                      <li>5. "Scriptleri Yükle" butonuna tıklayın</li>
-                    </ol>
-                  </div>
-                </div>
+                </section>
 
                 {/* GitHub Token */}
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-4">GitHub Personal Access Token (Opsiyonel)</h3>
+                <section className="space-y-3">
+                  <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                    GitHub Token
+                  </h3>
+                  <div className="glass-card rounded-xl p-5 space-y-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Token</label>
+                      <label className="text-sm font-medium">Personal Access Token</label>
                       <Input
                         type="password"
                         placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                         value={githubToken}
                         onChange={(e) => setGithubToken(e.target.value)}
+                        className="text-sm font-mono"
                       />
                       {githubToken && (
-                        <p className="text-xs text-green-600 dark:text-green-500 flex items-center gap-1">
+                        <p className="text-xs text-emerald-500 flex items-center gap-1.5">
                           <CheckCircle2 className="w-3 h-3" />
-                          Token kaydedildi ve scriptler yüklenirken kullanılacak
+                          Token kaydedildi
                         </p>
                       )}
                       {!githubToken && (
-                        <p className="text-xs text-muted-foreground">
-                          GitHub API rate limit'ini artırmak için token ekleyebilirsiniz.
+                        <p className="text-xs text-muted-foreground/60">
+                          Rate limit'i artırmak için opsiyonel token.
                         </p>
                       )}
                     </div>
-                  </div>
 
-                  <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 p-4 space-y-2">
-                    <p className="text-sm font-medium text-yellow-600 dark:text-yellow-500">
-                      ⚠️ Rate Limit Hatası mı Aldınız?
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      GitHub API saatlik 60 istek limiti vardır. Bu limiti aşarsanız:
-                    </p>
-                    <ol className="text-xs text-muted-foreground space-y-1 ml-4">
-                      <li>1. <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">GitHub Settings → Developer settings → Personal access tokens</a></li>
-                      <li>2. "Generate new token (classic)" tıklayın</li>
-                      <li>3. Sadece "public_repo" yetkisini seçin</li>
-                      <li>4. Token'ı kopyalayıp yukarıya yapıştırın</li>
-                      <li>5. Token ile saatlik limit 5000 isteğe çıkar</li>
-                    </ol>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      <strong>Not:</strong> Token sadece public repolar için kullanılacak ve bilgisayarınızda saklanacaktır.
-                    </p>
+                    <div className="rounded-lg bg-yellow-500/5 border border-yellow-500/15 p-4 space-y-2">
+                      <p className="text-xs font-medium text-yellow-600 dark:text-yellow-500">
+                        ⚠️ Rate Limit Hatası mı Aldınız?
+                      </p>
+                      <ol className="text-xs text-muted-foreground space-y-1 ml-4 list-decimal">
+                        <li>
+                          <a
+                            href="https://github.com/settings/tokens"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline"
+                          >
+                            GitHub Settings → Tokens
+                          </a>
+                        </li>
+                        <li>"Generate new token (classic)" tıklayın</li>
+                        <li>"public_repo" yetkisini seçin</li>
+                        <li>Token'ı kopyalayıp yukarıya yapıştırın</li>
+                      </ol>
+                    </div>
                   </div>
-                </div>
+                </section>
 
-                {/* Theme Settings */}
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-4">Görünüm</h3>
-                    <div className="flex items-center justify-between p-4 border rounded-lg">
+                {/* Appearance */}
+                <section className="space-y-3">
+                  <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                    Görünüm
+                  </h3>
+                  <div className="glass-card rounded-xl p-5">
+                    <div className="flex items-center justify-between">
                       <div>
-                        <p className="font-medium">Tema</p>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-sm font-medium">Tema</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
                           {theme === 'dark' ? 'Koyu tema aktif' : 'Açık tema aktif'}
                         </p>
                       </div>
-                      <Button variant="outline" size="icon" onClick={toggleTheme}>
+                      <Button variant="outline" size="icon" onClick={toggleTheme} className="h-9 w-9">
                         {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                       </Button>
                     </div>
                   </div>
-                </div>
+                </section>
 
                 {/* About */}
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-4">Hakkında</h3>
-                    <div className="space-y-2 text-sm text-muted-foreground">
-                      <p><strong>DEIWARE</strong></p>
-                      <p>Versiyon: 1.0.0</p>
-                      <p>Windows Script Management Tool</p>
-                      <p className="pt-2">
-                        PowerShell scriptlerinizi ve Registry dosyalarınızı GitHub üzerinden 
-                        yönetip çalıştırmanızı sağlar.
-                      </p>
-                    </div>
+                <section className="space-y-3">
+                  <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                    Hakkında
+                  </h3>
+                  <div className="glass-card rounded-xl p-5 space-y-1.5 text-sm text-muted-foreground">
+                    <p className="font-semibold text-foreground">DEIWARE</p>
+                    <p className="text-xs">Versiyon 1.0.0</p>
+                    <p className="text-xs mt-2">
+                      PowerShell scriptlerinizi ve Registry dosyalarınızı GitHub üzerinden
+                      yönetip çalıştırmanızı sağlar.
+                    </p>
                   </div>
-                </div>
+                </section>
 
-                <div className="flex justify-end pt-4 border-t">
-                  <Button onClick={handleSaveSettings}>
+                {/* Save */}
+                <div className="flex justify-end pb-4">
+                  <Button onClick={handleSaveSettings} className="h-10 px-6">
                     Ayarları Kaydet
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+              </div>
+            </ScrollArea>
+          )}
+        </main>
       </div>
+
+      {/* Status Bar */}
+      <StatusBar
+        selectedCount={selectedCount}
+        totalScripts={totalScripts}
+        initStatus={initStatus}
+        lastRunTime={lastRunTime}
+        rateLimit={rateLimit}
+      />
     </div>
   );
 }

@@ -3,25 +3,30 @@ import { Button } from './ui/button';
 
 export function TitleBar() {
   return (
-    <div className="flex items-center justify-between h-8 bg-background/95 backdrop-blur-sm border-b border-border/50 select-none drag-region">
-      <div className="flex items-center gap-2 px-3">
-        <div className="w-3 h-3 rounded-full bg-primary/80" />
-        <span className="text-xs font-medium text-foreground/90">DEIWARE</span>
+    <div className="flex items-center justify-between h-9 bg-background/80 backdrop-blur-md border-b border-border/30 select-none drag-region">
+      <div className="flex items-center gap-2.5 px-4">
+        <div className="relative w-2.5 h-2.5">
+          <div className="absolute inset-0 rounded-full bg-primary animate-pulse-glow" />
+          <div className="absolute inset-0 rounded-full bg-primary" />
+        </div>
+        <span className="text-[11px] font-semibold tracking-wider text-foreground/70 uppercase">
+          Deiware
+        </span>
       </div>
 
       <div className="flex items-center no-drag">
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-12 rounded-none hover:bg-accent"
+          className="h-9 w-11 rounded-none text-muted-foreground hover:text-foreground hover:bg-accent/80 transition-colors"
           onClick={() => window.electronAPI.windowMinimize()}
         >
-          <Minus className="h-3 w-3" />
+          <Minus className="h-3.5 w-3.5" />
         </Button>
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-12 rounded-none hover:bg-accent"
+          className="h-9 w-11 rounded-none text-muted-foreground hover:text-foreground hover:bg-accent/80 transition-colors"
           onClick={() => window.electronAPI.windowMaximize()}
         >
           <Square className="h-3 w-3" />
@@ -29,10 +34,10 @@ export function TitleBar() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-12 rounded-none hover:bg-destructive hover:text-destructive-foreground"
+          className="h-9 w-11 rounded-none text-muted-foreground hover:bg-red-500/90 hover:text-white transition-colors"
           onClick={() => window.electronAPI.windowClose()}
         >
-          <X className="h-3 w-3" />
+          <X className="h-3.5 w-3.5" />
         </Button>
       </div>
     </div>

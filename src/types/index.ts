@@ -1,7 +1,7 @@
 export interface ScriptFile {
   name: string;
   path: string;
-  type: 'powershell' | 'registry';
+  type: 'powershell' | 'registry' | 'batch';
   category: string;
   description?: string;
   downloadUrl?: string;
@@ -39,6 +39,7 @@ declare global {
       fetchFileContent: (downloadUrl: string) => Promise<string>;
       runPowerShell: (scriptContent: string) => Promise<{ success: boolean; output: string; error: string }>;
       runRegistry: (regContent: string) => Promise<{ success: boolean; output: string; error: string }>;
+      runBatch: (scriptContent: string, fileName: string) => Promise<{ success: boolean; output: string; error: string }>;
       getSystemTheme: () => Promise<'light' | 'dark'>;
       windowMinimize: () => void;
       windowMaximize: () => void;
