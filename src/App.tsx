@@ -35,8 +35,21 @@ function App() {
   const [initStatus, setInitStatus] = useState<'pending' | 'success' | 'error'>('pending');
   const [defaultRepoUrl] = useState('https://github.com/deityxox/DEIWARE/tree/main/scripts');
   const [userRepoUrl, setUserRepoUrl] = useState('');
+  const [githubToken, setGithubToken] = useState(() => {
+    // localStorage'dan token'ı yükle
+    return localStorage.getItem('githubToken') || '';
+  });
   const [activeTab, setActiveTab] = useState('scripts');
   const [scriptTab, setScriptTab] = useState<'default' | 'user'>('default');
+
+  // GitHub token değiştiğinde localStorage'a kaydet
+  useEffect(() => {
+    if (githubToken) {
+      localStorage.setItem('githubToken', githubToken);
+    } else {
+      localStorage.removeItem('githubToken');
+    }
+  }, [githubToken]);
 
   // Sistem temasını al
   useEffect(() => {
@@ -105,13 +118,97 @@ function App() {
     setLogs((prev) => [newLog, ...prev]);
   };
 
+  // Akıllı kategorize fonksiyonu
+  const smartCategorize = (scriptName: string, folderPath: string): string => {
+    // Önce klasör isminden kategori bulmaya çalış
+    const pathParts = folderPath.split('/').filter(p => p);
+    
+    // Eğer klasör varsa ve anlamlı bir isimse kullan
+    if (pathParts.length > 0) {
+      const folderName = pathParts[pathParts.length - 1];
+      
+      // Numaralı klasör isimleri (01-Security gibi) temizle
+      const cleanFolderName = folderName.replace(/^\d+[-_\s]*/, '');
+      
+      // Tire ve alt çizgileri boşluğa çevir, her kelimenin ilk harfini büyük yap
+      if (cleanFolderName.length > 2) {
+        return cleanFolderName
+          .split(/[-_]/)
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ');
+      }
+    }
+    
+    // Klasörden kategori bulunamazsa, script isminden analiz et
+    const name = scriptName.toLowerCase();
+    
+    // Güvenlik
+    if (name.includes('defender') || name.includes('firewall') || name.includes('security') || 
+        name.includes('uac') || name.includes('hvci') || name.includes('integrity')) {
+      return 'Security';
+    }
+    
+    // Performans
+    if (name.includes('performance') || name.includes('p0') || name.includes('msi') || 
+        name.includes('parking') || name.includes('timer') || name.includes('boost') ||
+        name.includes('optimization') || name.includes('optimize')) {
+      return 'Performance';
+    }
+    
+    // Kullanıcı Arayüzü
+    if (name.includes('startmenu') || name.includes('taskbar') || name.includes('menu') ||
+        name.includes('copilot') || name.includes('widget') || name.includes('context') ||
+        name.includes('theme') || name.includes('ui') || name.includes('interface')) {
+      return 'User Interface';
+    }
+    
+    // Ağ ve Güç
+    if (name.includes('network') || name.includes('power') || name.includes('adapter') ||
+        name.includes('ipv4') || name.includes('wake') || name.includes('device manager')) {
+      return 'Network & Power';
+    }
+    
+    // Bloatware
+    if (name.includes('bloatware') || name.includes('uwp') || name.includes('background') ||
+        name.includes('remove') || name.includes('uninstall') || name.includes('clean')) {
+      return 'Bloatware Management';
+    }
+    
+    // Uygulamalar
+    if (name.includes('edge') || name.includes('gamebar') || name.includes('xbox') ||
+        name.includes('browser') || name.includes('chrome') || name.includes('brave')) {
+      return 'Applications';
+    }
+    
+    // Sistem Bileşenleri
+    if (name.includes('directx') || name.includes('cpp') || name.includes('dotnet') ||
+        name.includes('framework') || name.includes('update') || name.includes('activation') ||
+        name.includes('windows')) {
+      return 'System Components';
+    }
+    
+    // GPU/Ekran
+    if (name.includes('nvidia') || name.includes('gpu') || name.includes('display') ||
+        name.includes('resolution') || name.includes('hdcp') || name.includes('hags')) {
+      return 'Graphics & Display';
+    }
+    
+    // Mouse/Input
+    if (name.includes('mouse') || name.includes('scaling') || name.includes('accel')) {
+      return 'Input Devices';
+    }
+    
+    // Varsayılan
+    return 'Miscellaneous';
+  };
+
   const loadScriptsFromGithub = async (repoUrl: string, isDefault: boolean = false) => {
     const setLoading = isDefault ? setIsLoadingDefault : setIsLoadingUser;
     const setCategories = isDefault ? setDefaultCategories : setUserCategories;
     
     setLoading(true);
     try {
-      const response = await window.electronAPI.fetchScriptsRecursive(repoUrl);
+      const response = await window.electronAPI.fetchScriptsRecursive(repoUrl, githubToken);
 
       console.log('GitHub Response:', response);
 
@@ -126,13 +223,23 @@ function App() {
       }
 
       if (Array.isArray(response)) {
-        const scripts: ScriptFile[] = response.map((file) => ({
-          name: file.name,
-          path: file.path,
-          type: file.name.endsWith('.ps1') ? 'powershell' : 'registry',
-          category: 'Genel',
-          downloadUrl: file.download_url,
-        }));
+        const scripts: ScriptFile[] = response.map((file) => {
+          // Klasör yolunu al (dosya adı olmadan)
+          const pathParts = file.path.split('/');
+          const folderPath = pathParts.slice(0, -1).join('/');
+          const category = smartCategorize(file.name, folderPath);
+          
+          // Debug log
+          console.log('Script:', file.name, '| Folder:', folderPath, '| Category:', category);
+          
+          return {
+            name: file.name,
+            path: file.path,
+            type: file.name.endsWith('.ps1') ? 'powershell' : 'registry',
+            category: category,
+            downloadUrl: file.download_url,
+          };
+        });
 
         if (scripts.length === 0) {
           addLog({
@@ -144,37 +251,34 @@ function App() {
           return;
         }
 
+        // Kategorilere göre grupla
         const categoriesMap = new Map<string, ScriptFile[]>();
         scripts.forEach((script) => {
-          const pathParts = script.path.split('/');
-          let category = 'Genel';
-          
-          if (pathParts.length > 1) {
-            category = pathParts[0].charAt(0).toUpperCase() + pathParts[0].slice(1);
+          if (!categoriesMap.has(script.category)) {
+            categoriesMap.set(script.category, []);
           }
-          
-          script.category = category;
-
-          if (!categoriesMap.has(category)) {
-            categoriesMap.set(category, []);
-          }
-          categoriesMap.get(category)!.push(script);
+          categoriesMap.get(script.category)!.push(script);
         });
 
-        const newCategories: Category[] = Array.from(categoriesMap.entries()).map(
-          ([name, scripts]) => ({
-            id: name.toLowerCase().replace(/\s+/g, '-'),
-            name,
-            icon: getCategoryIcon(name),
-            scripts,
-          })
-        );
+        // Kategorileri alfabetik sırala (Miscellaneous en sona)
+        const sortedCategories = Array.from(categoriesMap.entries()).sort((a, b) => {
+          if (a[0] === 'Miscellaneous') return 1;
+          if (b[0] === 'Miscellaneous') return -1;
+          return a[0].localeCompare(b[0]);
+        });
+
+        const newCategories: Category[] = sortedCategories.map(([name, scripts]) => ({
+          id: name.toLowerCase().replace(/\s+/g, '-'),
+          name,
+          icon: getCategoryIcon(name),
+          scripts: scripts.sort((a, b) => a.name.localeCompare(b.name)), // Scriptleri alfabetik sırala
+        }));
 
         setCategories(newCategories);
         addLog({
           scriptName: isDefault ? 'Default Scriptler' : 'Kullanıcı Scriptleri',
           success: true,
-          output: `${scripts.length} script başarıyla yüklendi (${newCategories.length} kategori)`,
+          output: `${scripts.length} script yüklendi • ${newCategories.length} kategori oluşturuldu`,
         });
       } else {
         addLog({
@@ -215,14 +319,38 @@ function App() {
 
   const getCategoryIcon = (category: string): string => {
     const lower = category.toLowerCase();
-    if (lower.includes('performance') || lower.includes('performans')) return '⚡';
-    if (lower.includes('security') || lower.includes('güvenlik')) return '🔒';
-    if (lower.includes('privacy') || lower.includes('gizlilik')) return '🛡️';
-    if (lower.includes('system') || lower.includes('sistem')) return '⚙️';
-    if (lower.includes('network') || lower.includes('ağ')) return '🌐';
-    if (lower.includes('ui') || lower.includes('arayüz')) return '🎨';
-    if (lower.includes('cleanup') || lower.includes('temizlik')) return '🧹';
-    return '📦';
+    
+    // Güvenlik
+    if (lower.includes('security')) return '🔒';
+    
+    // Performans
+    if (lower.includes('performance')) return '⚡';
+    
+    // Kullanıcı Arayüzü
+    if (lower.includes('interface') || lower.includes('ui')) return '🎨';
+    
+    // Ağ ve Güç
+    if (lower.includes('network') || lower.includes('power')) return '🌐';
+    
+    // Bloatware
+    if (lower.includes('bloatware') || lower.includes('management')) return '🧹';
+    
+    // Uygulamalar
+    if (lower.includes('application')) return '📱';
+    
+    // Sistem Bileşenleri
+    if (lower.includes('system') || lower.includes('component')) return '⚙️';
+    
+    // GPU/Ekran
+    if (lower.includes('graphic') || lower.includes('display')) return '🖥️';
+    
+    // Input Devices
+    if (lower.includes('input') || lower.includes('device')) return '🖱️';
+    
+    // Diğer
+    if (lower.includes('miscellaneous')) return '📦';
+    
+    return '�';
   };
 
   const toggleScriptSelection = (scriptPath: string) => {
@@ -512,6 +640,52 @@ function App() {
                       <li>4. Scriptler sekmesinden "Benim Scriptlerim" seçin</li>
                       <li>5. "Scriptleri Yükle" butonuna tıklayın</li>
                     </ol>
+                  </div>
+                </div>
+
+                {/* GitHub Token */}
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-lg font-semibold mb-4">GitHub Personal Access Token (Opsiyonel)</h3>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Token</label>
+                      <Input
+                        type="password"
+                        placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                        value={githubToken}
+                        onChange={(e) => setGithubToken(e.target.value)}
+                      />
+                      {githubToken && (
+                        <p className="text-xs text-green-600 dark:text-green-500 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Token kaydedildi ve scriptler yüklenirken kullanılacak
+                        </p>
+                      )}
+                      {!githubToken && (
+                        <p className="text-xs text-muted-foreground">
+                          GitHub API rate limit'ini artırmak için token ekleyebilirsiniz.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 p-4 space-y-2">
+                    <p className="text-sm font-medium text-yellow-600 dark:text-yellow-500">
+                      ⚠️ Rate Limit Hatası mı Aldınız?
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      GitHub API saatlik 60 istek limiti vardır. Bu limiti aşarsanız:
+                    </p>
+                    <ol className="text-xs text-muted-foreground space-y-1 ml-4">
+                      <li>1. <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">GitHub Settings → Developer settings → Personal access tokens</a></li>
+                      <li>2. "Generate new token (classic)" tıklayın</li>
+                      <li>3. Sadece "public_repo" yetkisini seçin</li>
+                      <li>4. Token'ı kopyalayıp yukarıya yapıştırın</li>
+                      <li>5. Token ile saatlik limit 5000 isteğe çıkar</li>
+                    </ol>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      <strong>Not:</strong> Token sadece public repolar için kullanılacak ve bilgisayarınızda saklanacaktır.
+                    </p>
                   </div>
                 </div>
 

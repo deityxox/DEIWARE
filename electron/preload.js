@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   initExecutionPolicy: () => ipcRenderer.invoke('init-execution-policy'),
   fetchScripts: (repoUrl) => ipcRenderer.invoke('fetch-scripts', repoUrl),
-  fetchScriptsRecursive: (repoUrl) => ipcRenderer.invoke('fetch-scripts-recursive', repoUrl),
+  fetchScriptsRecursive: (repoUrl, token) => ipcRenderer.invoke('fetch-scripts-recursive', repoUrl, token),
   fetchFileContent: (downloadUrl) => ipcRenderer.invoke('fetch-file-content', downloadUrl),
   runPowerShell: (scriptContent) => ipcRenderer.invoke('run-powershell', scriptContent),
   runRegistry: (regContent) => ipcRenderer.invoke('run-registry', regContent),

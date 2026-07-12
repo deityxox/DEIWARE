@@ -115,24 +115,95 @@ ipcMain.handle('fetch-scripts', async (event, repoUrl) => {
 });
 
 // GitHub'dan klasör içeriğini recursive oku
-ipcMain.handle('fetch-scripts-recursive', async (event, repoUrl) => {
+ipcMain.handle('fetch-scripts-recursive', async (event, repoUrl, githubToken = '') => {
   const allScripts = [];
   
   const fetchFolder = async (url) => {
     return new Promise((resolve, reject) => {
+      console.log('Fetching:', url);
+      
+      const headers = {
+        'User-Agent': 'DEIWARE',
+      };
+      
+      // Token varsa ekle
+      if (githubToken && githubToken.trim()) {
+        headers['Authorization'] = `Bearer ${githubToken.trim()}`;
+        console.log('Using GitHub token for authenticated request');
+      } else {
+        console.log('No GitHub token provided - using unauthenticated request');
+      }
+      
       https.get(
         url,
-        {
-          headers: {
-            'User-Agent': 'DEIWARE',
-          },
-        },
+        { headers },
         (res) => {
           let data = '';
+          
+          // Rate limit bilgilerini logla
+          console.log('Rate Limit Remaining:', res.headers['x-ratelimit-remaining']);
+          console.log('Rate Limit Reset:', new Date(res.headers['x-ratelimit-reset'] * 1000));
+          
+          // HTTP hata kodlarını kontrol et
+          if (res.statusCode === 403) {
+            res.on('data', (chunk) => (data += chunk));
+            res.on('end', () => {
+              const remaining = res.headers['x-ratelimit-remaining'];
+              const resetTime = new Date(res.headers['x-ratelimit-reset'] * 1000).toLocaleString('tr-TR');
+              const isAuthenticated = githubToken && githubToken.trim() ? 'Evet' : 'Hayır';
+              
+              reject({ 
+                error: 'GitHub Rate Limit', 
+                details: `API limiti aşıldı.\n\nKalan istek: ${remaining}\nSıfırlanma zamanı: ${resetTime}\nToken kullanılıyor: ${isAuthenticated}\n\n${isAuthenticated === 'Hayır' ? 'Ayarlardan GitHub Personal Access Token ekleyin.' : 'Token geçersiz olabilir veya limiti dolmuş. Yeni token oluşturun.'}` 
+              });
+            });
+            return;
+          }
+          
+          if (res.statusCode === 401) {
+            res.on('data', (chunk) => (data += chunk));
+            res.on('end', () => {
+              reject({ 
+                error: 'GitHub Yetkilendirme Hatası', 
+                details: 'GitHub token geçersiz veya süresi dolmuş. Lütfen yeni bir Personal Access Token oluşturun:\n1. github.com/settings/tokens\n2. Generate new token (classic)\n3. "public_repo" yetkisini seçin\n4. Token\'ı kopyalayıp ayarlara yapıştırın' 
+              });
+            });
+            return;
+          }
+          
+          if (res.statusCode !== 200) {
+            res.on('data', (chunk) => (data += chunk));
+            res.on('end', () => {
+              try {
+                const parsed = JSON.parse(data);
+                reject({ 
+                  error: `HTTP ${res.statusCode}`, 
+                  details: parsed.message || 'GitHub API hatası' 
+                });
+              } catch (e) {
+                reject({ 
+                  error: `HTTP ${res.statusCode}`, 
+                  details: 'GitHub API yanıt vermedi' 
+                });
+              }
+            });
+            return;
+          }
+          
           res.on('data', (chunk) => (data += chunk));
           res.on('end', () => {
             try {
               const parsed = JSON.parse(data);
+              
+              // API hatası kontrolü
+              if (parsed.message) {
+                reject({ 
+                  error: 'GitHub API Hatası', 
+                  details: parsed.message 
+                });
+                return;
+              }
+              
               resolve(parsed);
             } catch (e) {
               reject({ error: 'JSON parse hatası', details: e.message });
@@ -145,19 +216,23 @@ ipcMain.handle('fetch-scripts-recursive', async (event, repoUrl) => {
     });
   };
 
-  const processItems = async (items) => {
+  const processItems = async (items, basePath = '') => {
     for (const item of items) {
       if (item.type === 'file' && (item.name.endsWith('.ps1') || item.name.endsWith('.reg'))) {
-        allScripts.push(item);
+        // Dosya path'ine base path ekle
+        allScripts.push({
+          ...item,
+          path: basePath ? `${basePath}/${item.name}` : item.name
+        });
       } else if (item.type === 'dir') {
         // Alt klasörleri de tara
         try {
           const subItems = await fetchFolder(item.url);
           if (Array.isArray(subItems)) {
-            await processItems(subItems);
+            await processItems(subItems, basePath ? `${basePath}/${item.name}` : item.name);
           }
         } catch (e) {
-          console.log('Alt klasör tarama hatası:', e);
+          console.log('Alt klasör tarama hatası:', item.name, e);
         }
       }
     }
@@ -169,22 +244,53 @@ ipcMain.handle('fetch-scripts-recursive', async (event, repoUrl) => {
     if (!repoUrl.includes('api.github.com')) {
       const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)(?:\/tree\/([^\/]+)(?:\/(.*))?)?/);
       if (match) {
-        const [, owner, repo, branch, path] = match;
-        apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path || ''}`;
-        if (branch) {
-          apiUrl += `?ref=${branch}`;
-        }
+        const [, owner, repo, branch = 'main', pathStr = ''] = match;
+        
+        // Path'i temizle
+        const cleanPath = pathStr.replace(/^\/+|\/+$/g, '');
+        
+        apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${cleanPath}`;
+        apiUrl += `?ref=${branch}`;
+        
+        console.log('Parsed URL:', { owner, repo, branch, path: cleanPath, apiUrl });
+      } else {
+        return { 
+          error: 'Geçersiz GitHub URL', 
+          details: 'URL formatı: https://github.com/kullanici/repo/tree/branch/klasor' 
+        };
       }
     }
 
     const items = await fetchFolder(apiUrl);
-    if (Array.isArray(items)) {
-      await processItems(items);
-      return allScripts;
-    } else {
-      return { error: 'Geçersiz yanıt', details: 'API yanıtı bir dizi değil' };
+    
+    if (!Array.isArray(items)) {
+      console.log('API Response:', items);
+      return { 
+        error: 'Geçersiz yanıt', 
+        details: 'API yanıtı bir dizi değil. Repo URL\'ini kontrol edin.' 
+      };
     }
+    
+    if (items.length === 0) {
+      return { 
+        error: 'Boş klasör', 
+        details: 'Belirtilen klasörde dosya bulunamadı' 
+      };
+    }
+    
+    await processItems(items);
+    
+    if (allScripts.length === 0) {
+      return { 
+        error: 'Script bulunamadı', 
+        details: 'Klasörde .ps1 veya .reg dosyası bulunamadı' 
+      };
+    }
+    
+    console.log(`Toplam ${allScripts.length} script bulundu`);
+    return allScripts;
   } catch (error) {
+    console.error('fetch-scripts-recursive error:', error);
     return { error: error.error || 'Hata', details: error.details || String(error) };
   }
 });

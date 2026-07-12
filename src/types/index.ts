@@ -35,7 +35,7 @@ declare global {
     electronAPI: {
       initExecutionPolicy: () => Promise<{ success: boolean; output?: string; error?: string }>;
       fetchScripts: (repoUrl: string) => Promise<any>;
-      fetchScriptsRecursive: (repoUrl: string) => Promise<any>;
+      fetchScriptsRecursive: (repoUrl: string, githubToken?: string) => Promise<any>;
       fetchFileContent: (downloadUrl: string) => Promise<string>;
       runPowerShell: (scriptContent: string) => Promise<{ success: boolean; output: string; error: string }>;
       runRegistry: (regContent: string) => Promise<{ success: boolean; output: string; error: string }>;
