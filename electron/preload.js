@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   runRegistry: (regContent) => ipcRenderer.invoke('run-registry', regContent),
   runBatch: (scriptContent, fileName) => ipcRenderer.invoke('run-batch', scriptContent, fileName),
   getSystemTheme: () => ipcRenderer.invoke('get-system-theme'),
+  getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   windowMinimize: () => ipcRenderer.send('window-minimize'),
   windowMaximize: () => ipcRenderer.send('window-maximize'),
   windowClose: () => ipcRenderer.send('window-close'),

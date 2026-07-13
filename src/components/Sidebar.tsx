@@ -4,13 +4,14 @@ import {
   Settings,
   Search,
   ChevronRight,
+  Home,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Category } from '@/types';
 
 interface SidebarProps {
-  activeView: 'scripts' | 'logs' | 'settings';
-  onViewChange: (view: 'scripts' | 'logs' | 'settings') => void;
+  activeView: 'home' | 'scripts' | 'logs' | 'settings';
+  onViewChange: (view: 'home' | 'scripts' | 'logs' | 'settings') => void;
   categories: Category[];
   activeCategory: string | null;
   onCategoryChange: (categoryId: string) => void;
@@ -21,6 +22,7 @@ interface SidebarProps {
 }
 
 const navItems = [
+  { id: 'home' as const, icon: Home, label: 'Anasayfa' },
   { id: 'scripts' as const, icon: FileCode, label: 'Scriptler' },
   { id: 'logs' as const, icon: Terminal, label: 'Loglar' },
   { id: 'settings' as const, icon: Settings, label: 'Ayarlar' },

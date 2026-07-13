@@ -1,6 +1,6 @@
 {
   "name": "deiware",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "DEIWARE - Windows 11 Modern Script Manager",
   "main": "electron/main.js",
   "scripts": {

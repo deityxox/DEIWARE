@@ -3,6 +3,7 @@ const path = require('path');
 const { exec } = require('child_process');
 const https = require('https');
 const fs = require('fs');
+const os = require('os');
 
 let mainWindow;
 
@@ -67,6 +68,75 @@ ipcMain.handle('init-execution-policy', async () => {
           output: 'ExecutionPolicy başarıyla Unrestricted olarak ayarlandı' 
         });
       }
+    });
+  });
+});
+
+// Sistem bilgilerini al (Neofetch formatı için)
+ipcMain.handle('get-system-info', async () => {
+  return new Promise((resolve) => {
+    // 1. Gather Node OS info
+    const username = process.env.USERNAME || os.userInfo().username || 'User';
+    const hostname = os.hostname();
+    const kernel = os.release();
+    const cpus = os.cpus();
+    const cpuModel = cpus.length > 0 ? cpus[0].model : 'Unknown CPU';
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
+    const uptimeSec = os.uptime();
+
+    // Uptime formatter
+    const days = Math.floor(uptimeSec / (3600 * 24));
+    const hours = Math.floor((uptimeSec % (3600 * 24)) / 3600);
+    const minutes = Math.floor((uptimeSec % 3600) / 60);
+    let uptimeStr = '';
+    if (days > 0) uptimeStr += `${days} gün, `;
+    if (hours > 0) uptimeStr += `${hours} saat, `;
+    uptimeStr += `${minutes} dakika`;
+
+    // 2. Run PowerShell command for GPU, Host, Board, Resolution, Disks
+    const psCommand = `PowerShell -NoProfile -Command "$cs = Get-CimInstance Win32_ComputerSystem; $board = Get-CimInstance Win32_BaseBoard; $gpu = Get-CimInstance Win32_VideoController | Select-Object -First 1; $disksList = @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3'); $disks = $disksList | ForEach-Object { @{ deviceId = $_.DeviceID; size = $_.Size; freeSpace = $_.FreeSpace } }; $os = Get-CimInstance Win32_OperatingSystem; $resStr = 'Unknown'; if ($gpu -and $gpu.CurrentHorizontalResolution) { $resStr = '{0}x{1}' -f $gpu.CurrentHorizontalResolution, $gpu.CurrentVerticalResolution }; @{ osName = $os.Caption; host = '{0} {1}' -f $cs.Manufacturer, $cs.Model; motherboard = '{0} {1}' -f $board.Manufacturer, $board.Product; gpuName = if ($gpu) { $gpu.Name } else { 'Unknown' }; resolution = $resStr; disks = $disks } | ConvertTo-Json"`;
+
+    exec(psCommand, (error, stdout) => {
+      let psInfo = {};
+      if (!error && stdout) {
+        try {
+          psInfo = JSON.parse(stdout.trim());
+        } catch (e) {
+          console.error('Failed to parse PowerShell system info JSON:', e);
+        }
+      }
+
+      let disks = [];
+      if (psInfo.disks) {
+        const rawDisks = Array.isArray(psInfo.disks) ? psInfo.disks : [psInfo.disks];
+        disks = rawDisks.map(d => ({
+          deviceId: d.deviceId || 'Unknown',
+          total: d.size || 0,
+          free: d.freeSpace || 0
+        }));
+      }
+
+      // 3. Merge and return
+      resolve({
+        username,
+        hostname,
+        osName: psInfo.osName || 'Microsoft Windows 11 Pro',
+        host: psInfo.host || 'Unknown Host',
+        kernel,
+        motherboard: psInfo.motherboard || 'Unknown Motherboard',
+        uptime: uptimeStr,
+        resolution: psInfo.resolution || '1920x1080',
+        cpu: cpuModel,
+        gpu: psInfo.gpuName || 'Unknown GPU',
+        memory: {
+          total: totalMem,
+          used: usedMem,
+          free: freeMem,
+        },
+        disks: disks
+      });
     });
   });
 });

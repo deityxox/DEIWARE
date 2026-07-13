@@ -30,6 +30,31 @@ export interface AppSettings {
   autoCheckUpdates: boolean;
 }
 
+export interface DiskInfo {
+  deviceId: string;
+  total: number;
+  free: number;
+}
+
+export interface SystemInfo {
+  username: string;
+  hostname: string;
+  osName: string;
+  host: string;
+  kernel: string;
+  motherboard: string;
+  uptime: string;
+  resolution: string;
+  cpu: string;
+  gpu: string;
+  memory: {
+    total: number;
+    used: number;
+    free: number;
+  };
+  disks: DiskInfo[];
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -41,6 +66,7 @@ declare global {
       runRegistry: (regContent: string) => Promise<{ success: boolean; output: string; error: string }>;
       runBatch: (scriptContent: string, fileName: string) => Promise<{ success: boolean; output: string; error: string }>;
       getSystemTheme: () => Promise<'light' | 'dark'>;
+      getSystemInfo: () => Promise<SystemInfo>;
       windowMinimize: () => void;
       windowMaximize: () => void;
       windowClose: () => void;

@@ -5,6 +5,7 @@ import { ScriptCard } from './components/ScriptCard';
 import { LogPanel } from './components/LogPanel';
 import { StatusBar } from './components/StatusBar';
 import { TerminalSplashScreen } from './components/TerminalSplashScreen';
+import { HomePanel } from './components/HomePanel';
 import versionData from '../version.json';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
@@ -24,7 +25,7 @@ function App() {
   // ─── State ───
   const [showSplash, setShowSplash] = useState(true);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
-  const [activeView, setActiveView] = useState<'scripts' | 'logs' | 'settings'>('scripts');
+  const [activeView, setActiveView] = useState<'home' | 'scripts' | 'logs' | 'settings'>('home');
   const [defaultCategories, setDefaultCategories] = useState<Category[]>([]);
   const [userCategories, setUserCategories] = useState<Category[]>([]);
   const [selectedScripts, setSelectedScripts] = useState<Set<string>>(new Set());
@@ -482,6 +483,9 @@ function App() {
 
         {/* Main Content */}
         <main className="flex-1 flex flex-col overflow-hidden">
+          {/* ═══ Home View ═══ */}
+          {activeView === 'home' && <HomePanel />}
+
           {/* ═══ Scripts View ═══ */}
           {activeView === 'scripts' && (
             <>
