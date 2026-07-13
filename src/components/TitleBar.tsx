@@ -9,8 +9,8 @@ export function TitleBar() {
           <div className="absolute inset-0 rounded-full bg-primary animate-pulse-glow" />
           <div className="absolute inset-0 rounded-full bg-primary" />
         </div>
-        <span className="text-[11px] font-semibold tracking-wider text-foreground/70 uppercase">
-          Deiware
+        <span className="text-[11px] font-semibold tracking-wider text-foreground/70">
+          deiwareOS
         </span>
       </div>
 
