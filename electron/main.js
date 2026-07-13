@@ -514,6 +514,118 @@ ipcMain.handle('get-system-theme', () => {
   });
 });
 
+// Gelişmiş Güncelleme Kontrolü
+ipcMain.handle('check-for-update', async (event, repoUrl, githubToken = '') => {
+  return new Promise((resolve) => {
+    let owner = 'deityxox';
+    let repo = 'DEIWARE';
+
+    if (repoUrl && repoUrl.trim()) {
+      const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+      if (match) {
+        owner = match[1];
+        repo = match[2];
+      }
+    }
+
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
+    const headers = {
+      'User-Agent': 'DEIWARE',
+    };
+
+    if (githubToken && githubToken.trim()) {
+      headers['Authorization'] = `Bearer ${githubToken.trim()}`;
+    }
+
+    https.get(apiUrl, { headers }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => (data += chunk));
+      res.on('end', () => {
+        try {
+          if (res.statusCode === 404) {
+            resolve({ error: 'Herhangi bir sürüm (release) bulunamadı.' });
+            return;
+          }
+          if (res.statusCode !== 200) {
+            resolve({ error: `GitHub API hatası (Status: ${res.statusCode})` });
+            return;
+          }
+
+          const release = JSON.parse(data);
+          const latestVersion = release.tag_name;
+          const exeAsset = release.assets.find(asset => asset.name.endsWith('.exe'));
+          
+          resolve({
+            latestVersion,
+            releaseNotes: release.body,
+            publishDate: release.published_at,
+            downloadUrl: exeAsset ? exeAsset.browser_download_url : null,
+            fileName: exeAsset ? exeAsset.name : null,
+            htmlUrl: release.html_url
+          });
+        } catch (e) {
+          resolve({ error: `JSON parse hatası: ${e.message}` });
+        }
+      });
+    }).on('error', (err) => {
+      resolve({ error: `Bağlantı hatası: ${err.message}` });
+    });
+  });
+});
+
+// Güncelleme indir ve kur
+ipcMain.handle('download-and-install-update', async (event, downloadUrl, fileName) => {
+  return new Promise((resolve, reject) => {
+    const tempDir = os.tmpdir();
+    const savePath = path.join(tempDir, fileName || 'DEIWARE-Setup.exe');
+    const fileStream = fs.createWriteStream(savePath);
+
+    const downloadFile = (url) => {
+      https.get(url, {
+        headers: { 'User-Agent': 'DEIWARE' }
+      }, (res) => {
+        if (res.statusCode === 302 || res.statusCode === 301) {
+          downloadFile(res.headers.location);
+          return;
+        }
+
+        if (res.statusCode !== 200) {
+          reject({ error: `İndirme hatası (Status: ${res.statusCode})` });
+          return;
+        }
+
+        res.pipe(fileStream);
+
+        fileStream.on('finish', () => {
+          fileStream.close();
+          
+          try {
+            const { spawn } = require('child_process');
+            const child = spawn(savePath, [], {
+              detached: true,
+              stdio: 'ignore'
+            });
+            child.unref();
+            
+            setTimeout(() => {
+              app.quit();
+            }, 800);
+
+            resolve({ success: true });
+          } catch (e) {
+            reject({ error: 'Kurulum başlatılamadı', details: e.message });
+          }
+        });
+      }).on('error', (err) => {
+        fs.unlink(savePath, () => {});
+        reject({ error: `Bağlantı hatası: ${err.message}` });
+      });
+    };
+
+    downloadFile(downloadUrl);
+  });
+});
+
 // Pencere kontrolleri
 ipcMain.on('window-minimize', () => mainWindow.minimize());
 ipcMain.on('window-maximize', () => {

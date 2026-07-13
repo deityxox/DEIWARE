@@ -67,6 +67,17 @@ declare global {
       runBatch: (scriptContent: string, fileName: string) => Promise<{ success: boolean; output: string; error: string }>;
       getSystemTheme: () => Promise<'light' | 'dark'>;
       getSystemInfo: () => Promise<SystemInfo>;
+      checkForUpdate: (repoUrl: string, githubToken?: string) => Promise<{
+        latestVersion?: string;
+        releaseNotes?: string;
+        publishDate?: string;
+        downloadUrl?: string | null;
+        fileName?: string | null;
+        htmlUrl?: string;
+        error?: string;
+        message?: string;
+      }>;
+      downloadAndInstallUpdate: (downloadUrl: string, fileName: string) => Promise<{ success: boolean; error?: string; details?: string }>;
       windowMinimize: () => void;
       windowMaximize: () => void;
       windowClose: () => void;

@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   runBatch: (scriptContent, fileName) => ipcRenderer.invoke('run-batch', scriptContent, fileName),
   getSystemTheme: () => ipcRenderer.invoke('get-system-theme'),
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
+  checkForUpdate: (repoUrl, token) => ipcRenderer.invoke('check-for-update', repoUrl, token),
+  downloadAndInstallUpdate: (downloadUrl, fileName) => ipcRenderer.invoke('download-and-install-update', downloadUrl, fileName),
   windowMinimize: () => ipcRenderer.send('window-minimize'),
   windowMaximize: () => ipcRenderer.send('window-maximize'),
   windowClose: () => ipcRenderer.send('window-close'),

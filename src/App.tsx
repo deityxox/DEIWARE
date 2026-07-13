@@ -47,6 +47,9 @@ function App() {
   const [scriptSearch, setScriptSearch] = useState('');
   const [lastRunTime, setLastRunTime] = useState<Date | undefined>();
   const [rateLimit, setRateLimit] = useState<{ remaining: number | null; limit: number | null; reset: number | null } | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'up-to-date' | 'downloading' | 'error'>('idle');
+  const [updateInfo, setUpdateInfo] = useState<{ latestVersion: string; downloadUrl: string; fileName: string; releaseNotes?: string } | null>(null);
+  const [updateError, setUpdateError] = useState<string>('');
 
   // ─── Derived ───
   const currentCategories = scriptTab === 'default' ? defaultCategories : userCategories;
@@ -452,6 +455,55 @@ function App() {
     });
   };
 
+  const handleCheckForUpdates = async () => {
+    setUpdateStatus('checking');
+    setUpdateError('');
+    try {
+      const response = await window.electronAPI.checkForUpdate(userRepoUrl || defaultRepoUrl, githubToken);
+      if (response.error) {
+        setUpdateStatus('error');
+        setUpdateError(response.error);
+        return;
+      }
+
+      const latest = response.latestVersion || 'v0.0.0';
+      const current = versionData.version || 'v0.0.0';
+
+      const cleanLatest = latest.replace(/^v/, '');
+      const cleanCurrent = current.replace(/^v/, '');
+
+      if (cleanLatest !== cleanCurrent && response.downloadUrl) {
+        setUpdateStatus('available');
+        setUpdateInfo({
+          latestVersion: latest,
+          downloadUrl: response.downloadUrl,
+          fileName: response.fileName || 'DEIWARE-Setup.exe',
+          releaseNotes: response.releaseNotes
+        });
+      } else {
+        setUpdateStatus('up-to-date');
+      }
+    } catch (error) {
+      setUpdateStatus('error');
+      setUpdateError(String(error));
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    if (!updateInfo || !updateInfo.downloadUrl) return;
+    setUpdateStatus('downloading');
+    try {
+      const result = await window.electronAPI.downloadAndInstallUpdate(updateInfo.downloadUrl, updateInfo.fileName);
+      if (result.error) {
+        setUpdateStatus('error');
+        setUpdateError(result.error);
+      }
+    } catch (error) {
+      setUpdateStatus('error');
+      setUpdateError(String(error));
+    }
+  };
+
   const selectedCount = selectedScripts.size;
 
   // ─── Render ───
@@ -724,18 +776,83 @@ function App() {
                   </div>
                 </section>
 
-                {/* About */}
+                {/* About & Updates */}
                 <section className="space-y-3">
                   <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
                     Hakkında
                   </h3>
-                  <div className="glass-card rounded-xl p-5 space-y-1.5 text-sm text-muted-foreground">
-                    <p className="font-semibold text-foreground">DEIWARE</p>
-                    <p className="text-xs">Versiyon {versionData.version} ({versionData.commit === 'dev' ? 'Geliştirme' : `${versionData.commit} • ${versionData.date}`})</p>
-                    <p className="text-xs mt-2">
-                      PowerShell scriptlerinizi ve Registry dosyalarınızı GitHub üzerinden
-                      yönetip çalıştırmanızı sağlar.
-                    </p>
+                  <div className="glass-card rounded-xl p-5 space-y-4 text-sm text-muted-foreground">
+                    <div className="space-y-1.5">
+                      <p className="font-semibold text-foreground">DEIWARE</p>
+                      <p className="text-xs">Versiyon {versionData.version} ({versionData.commit === 'dev' ? 'Geliştirme' : `${versionData.commit} • ${versionData.date}`})</p>
+                      <p className="text-xs mt-2">
+                        PowerShell scriptlerinizi ve Registry dosyalarınızı GitHub üzerinden
+                        yönetip çalıştırmanızı sağlar.
+                      </p>
+                    </div>
+
+                    <div className="border-t border-border/30 pt-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium">Güncellemeler</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleCheckForUpdates}
+                          disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+                          className="h-8 text-xs"
+                        >
+                          {updateStatus === 'checking' ? (
+                            <>
+                              <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
+                              Kontrol ediliyor...
+                            </>
+                          ) : (
+                            'Güncellemeleri Denetle'
+                          )}
+                        </Button>
+                      </div>
+
+                      {updateStatus === 'up-to-date' && (
+                        <p className="text-xs text-emerald-500 font-medium">
+                          Uygulamanız güncel! En son sürümü kullanıyorsunuz.
+                        </p>
+                      )}
+
+                      {updateStatus === 'available' && updateInfo && (
+                        <div className="rounded-lg bg-primary/5 border border-primary/20 p-3.5 space-y-2">
+                          <p className="text-xs font-medium text-foreground">
+                            Yeni sürüm mevcut: <span className="font-bold text-primary">{updateInfo.latestVersion}</span>
+                          </p>
+                          {updateInfo.releaseNotes && (
+                            <p className="text-[11px] text-muted-foreground bg-muted/40 p-2 rounded max-h-24 overflow-y-auto whitespace-pre-wrap font-mono">
+                              {updateInfo.releaseNotes}
+                            </p>
+                          )}
+                          <Button
+                            onClick={handleInstallUpdate}
+                            size="sm"
+                            className="h-8 text-xs w-full mt-1"
+                          >
+                            Şimdi İndir ve Kur
+                          </Button>
+                        </div>
+                      )}
+
+                      {updateStatus === 'downloading' && (
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                            Güncelleme indiriliyor ve kuruluyor. Lütfen bekleyin...
+                          </p>
+                        </div>
+                      )}
+
+                      {updateStatus === 'error' && (
+                        <p className="text-xs text-red-500 font-medium">
+                          Güncelleme kontrolü başarısız: {updateError}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </section>
 
