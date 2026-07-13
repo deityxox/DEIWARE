@@ -151,13 +151,12 @@ export function TerminalSplashScreen({ onComplete }: TerminalSplashScreenProps) 
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-background transition-all duration-500 ease-in-out ${
-        step === 'completing' ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
-      }`}
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-background transition-all duration-500 ease-in-out ${step === 'completing' ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
+        }`}
     >
       {/* Terminal Container */}
       <div className="w-[90vw] max-w-4xl h-[70vh] rounded-xl border border-border glass-card shadow-2xl flex flex-col overflow-hidden font-mono text-sm leading-relaxed text-foreground">
-        
+
         {/* Terminal Header */}
         <div className="h-11 border-b border-border bg-muted/40 px-4 flex items-center justify-between select-none">
           <div className="flex items-center gap-1.5">
@@ -167,7 +166,7 @@ export function TerminalSplashScreen({ onComplete }: TerminalSplashScreenProps) 
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium tracking-wide">
             <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
-            DEIWARE - System Boot Shell
+            deiwareOS - Optimizer
           </div>
           <div className="w-14" /> {/* Spacer */}
         </div>
