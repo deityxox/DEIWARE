@@ -4,7 +4,8 @@
   "description": "DEIWARE - Windows 11 Modern Script Manager",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
+    "prepare": "node setup-git-hooks.js",
+    "dev": "node setup-git-hooks.js && concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite",
     "dev:electron": "wait-on tcp:5173 && electron .",
     "build": "vite build && electron-builder",

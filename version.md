@@ -1,4 +1,4 @@
 # DEIWARE Version Details
-- Version: v0.0.0
-- Commit SHA: dev
-- Build Date: 2026-07-13 03:15:00
+- Version: v0.0.1
+- Commit SHA: ba01c9f
+- Build Date: 13.07.2026 03:20:25
