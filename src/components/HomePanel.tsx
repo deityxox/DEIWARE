@@ -14,7 +14,7 @@ export function HomePanel() {
       const info = await window.electronAPI.getSystemInfo();
       setSysInfo(info);
     } catch (e) {
-      console.error('Sistem bilgileri alınamadı:', e);
+      console.error('Sistem bilgileri alınamadı :', e);
     } finally {
       setLoading(false);
     }
