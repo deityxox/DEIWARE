@@ -1,6 +1,6 @@
 {
   "name": "deiware",
-  "version": "1.0.0",
+  "version": "0.0.7",
   "description": "DEIWARE - Windows 11 Modern Script Manager",
   "main": "electron/main.js",
   "scripts": {
@@ -11,7 +11,12 @@
     "build": "vite build && electron-builder",
     "preview": "vite preview"
   },
-  "keywords": ["windows", "deiware", "powershell", "electron"],
+  "keywords": [
+    "windows",
+    "deiware",
+    "powershell",
+    "electron"
+  ],
   "author": "Deity",
   "license": "MIT",
   "devDependencies": {

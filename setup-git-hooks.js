@@ -8,7 +8,7 @@ const hookContent = `#!/bin/sh
 # DEIWARE Auto-Version Pre-Commit Hook
 echo "Bumping version and updating metadata..."
 node update-version.js
-git add version.json version.md
+git add version.json version.md package.json
 `;
 
 if (fs.existsSync(path.join(__dirname, '.git'))) {

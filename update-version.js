@@ -4,6 +4,7 @@ const { execSync } = require('child_process');
 
 const versionJsonPath = path.join(__dirname, 'version.json');
 const versionMdPath = path.join(__dirname, 'version.md');
+const packageJsonPath = path.join(__dirname, 'package.json');
 
 // 1. Get commit SHA
 let commitSha = 'dev';
@@ -56,3 +57,20 @@ const mdContent = `# DEIWARE Version Details
 `;
 fs.writeFileSync(versionMdPath, mdContent);
 console.log(`Updated version.md`);
+
+// 7. Write to package.json to reflect version in electron-builder build outputs
+if (fs.existsSync(packageJsonPath)) {
+  try {
+    const packageData = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    // Strip leading 'v' for package.json semver compatibility
+    const semverVersion = versionData.version.startsWith('v')
+      ? versionData.version.substring(1)
+      : versionData.version;
+    
+    packageData.version = semverVersion;
+    fs.writeFileSync(packageJsonPath, JSON.stringify(packageData, null, 2) + '\n');
+    console.log(`Updated package.json version to: ${packageData.version}`);
+  } catch (e) {
+    console.error('Failed to update package.json version', e);
+  }
+}
