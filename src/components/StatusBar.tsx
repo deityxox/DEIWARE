@@ -93,9 +93,6 @@ export function StatusBar({ selectedCount, totalScripts, initStatus, lastRunTime
           <span className="text-muted-foreground/80">
             DEIWARE {versionData.version}
           </span>
-          <span className="text-muted-foreground/40">
-            ({versionData.commit === 'dev' ? 'Geliştirme' : `${versionData.commit} • ${versionData.date}`})
-          </span>
         </span>
 
         {/* Last run */}

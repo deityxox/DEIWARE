@@ -5,6 +5,7 @@ import { ScriptCard } from './components/ScriptCard';
 import { LogPanel } from './components/LogPanel';
 import { StatusBar } from './components/StatusBar';
 import { TerminalSplashScreen } from './components/TerminalSplashScreen';
+import versionData from '../version.json';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { ScrollArea } from './components/ui/scroll-area';
@@ -726,7 +727,7 @@ function App() {
                   </h3>
                   <div className="glass-card rounded-xl p-5 space-y-1.5 text-sm text-muted-foreground">
                     <p className="font-semibold text-foreground">DEIWARE</p>
-                    <p className="text-xs">Versiyon 1.0.0</p>
+                    <p className="text-xs">Versiyon {versionData.version} ({versionData.commit === 'dev' ? 'Geliştirme' : `${versionData.commit} • ${versionData.date}`})</p>
                     <p className="text-xs mt-2">
                       PowerShell scriptlerinizi ve Registry dosyalarınızı GitHub üzerinden
                       yönetip çalıştırmanızı sağlar.
