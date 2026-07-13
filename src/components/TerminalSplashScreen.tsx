@@ -178,7 +178,7 @@ export function TerminalSplashScreen({ onComplete }: TerminalSplashScreenProps) 
         >
           {/* Shell Prompt */}
           <div className="flex flex-wrap items-center gap-x-2">
-            <span className="text-primary font-semibold">ozguro@DEIWARE</span>
+            <span className="text-primary font-semibold">ozguro@deiware.deitysign.com.tr</span>
             <span className="text-muted-foreground">:</span>
             <span className="text-sky-600 dark:text-sky-400">~/deitysign/deiware</span>
             <span className="text-muted-foreground">$</span>
