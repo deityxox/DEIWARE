@@ -1,5 +1,6 @@
 import { AlertCircle, Zap, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import versionData from '../../version.json';
 
 interface RateLimit {
   remaining: number | null;
@@ -85,10 +86,17 @@ export function StatusBar({ selectedCount, totalScripts, initStatus, lastRunTime
           </div>
         )}
 
-        {/* Total scripts */}
-        {totalScripts > 0 && (
-          <span className="tabular-nums">{totalScripts} script</span>
-        )}
+        {/* Total scripts & Version */}
+        <span className="tabular-nums flex items-center gap-1.5">
+          {totalScripts > 0 && <span>{totalScripts} script</span>}
+          {totalScripts > 0 && <span className="text-muted-foreground/30">•</span>}
+          <span className="text-muted-foreground/80">
+            DEIWARE {versionData.version}
+          </span>
+          <span className="text-muted-foreground/40">
+            ({versionData.commit === 'dev' ? 'Geliştirme' : `${versionData.commit} • ${versionData.date}`})
+          </span>
+        </span>
 
         {/* Last run */}
         {lastRunTime && (

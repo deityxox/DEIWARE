@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar';
 import { ScriptCard } from './components/ScriptCard';
 import { LogPanel } from './components/LogPanel';
 import { StatusBar } from './components/StatusBar';
+import { TerminalSplashScreen } from './components/TerminalSplashScreen';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { ScrollArea } from './components/ui/scroll-area';
@@ -20,6 +21,7 @@ import {
 
 function App() {
   // ─── State ───
+  const [showSplash, setShowSplash] = useState(true);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [activeView, setActiveView] = useState<'scripts' | 'logs' | 'settings'>('scripts');
   const [defaultCategories, setDefaultCategories] = useState<Category[]>([]);
@@ -451,6 +453,10 @@ function App() {
   const selectedCount = selectedScripts.size;
 
   // ─── Render ───
+  if (showSplash) {
+    return <TerminalSplashScreen onComplete={() => setShowSplash(false)} />;
+  }
+
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
       <TitleBar />
