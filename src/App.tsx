@@ -494,9 +494,9 @@ function App() {
     setUpdateStatus('downloading');
     try {
       const result = await window.electronAPI.downloadAndInstallUpdate(updateInfo.downloadUrl, updateInfo.fileName);
-      if (result.error) {
+      if (!result.success) {
         setUpdateStatus('error');
-        setUpdateError(result.error);
+        setUpdateError(result.error || 'İndirme veya kurulum başlatılamadı.');
       }
     } catch (error) {
       setUpdateStatus('error');

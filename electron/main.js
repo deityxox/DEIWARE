@@ -575,10 +575,9 @@ ipcMain.handle('check-for-update', async (event, repoUrl, githubToken = '') => {
 
 // Güncelleme indir ve kur
 ipcMain.handle('download-and-install-update', async (event, downloadUrl, fileName) => {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const tempDir = os.tmpdir();
     const savePath = path.join(tempDir, fileName || 'DEIWARE-Setup.exe');
-    const fileStream = fs.createWriteStream(savePath);
 
     const downloadFile = (url) => {
       https.get(url, {
@@ -590,10 +589,11 @@ ipcMain.handle('download-and-install-update', async (event, downloadUrl, fileNam
         }
 
         if (res.statusCode !== 200) {
-          reject({ error: `İndirme hatası (Status: ${res.statusCode})` });
+          resolve({ success: false, error: `İndirme hatası (Sunucu kodu: ${res.statusCode})` });
           return;
         }
 
+        const fileStream = fs.createWriteStream(savePath);
         res.pipe(fileStream);
 
         fileStream.on('finish', () => {
@@ -613,12 +613,16 @@ ipcMain.handle('download-and-install-update', async (event, downloadUrl, fileNam
 
             resolve({ success: true });
           } catch (e) {
-            reject({ error: 'Kurulum başlatılamadı', details: e.message });
+            resolve({ success: false, error: `Kurulum başlatılamadı: ${e.message}` });
           }
+        });
+
+        fileStream.on('error', (err) => {
+          resolve({ success: false, error: `Dosya yazma hatası: ${err.message}` });
         });
       }).on('error', (err) => {
         fs.unlink(savePath, () => {});
-        reject({ error: `Bağlantı hatası: ${err.message}` });
+        resolve({ success: false, error: `Bağlantı hatası: ${err.message}` });
       });
     };
 
