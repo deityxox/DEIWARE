@@ -12,7 +12,7 @@ Windows Registry Editor Version 5.00
     b5,66,ff,aa,\                     ; Links in action center and apps 
     6c,3a,98,aa,\                     ; Taskbar icons underline
     8a,2c,dd,aa,\                     ; Start button hover
-    9d,5c,d6,aa,\                     ; Settings icons and links [Blue]
+    b5,66,ff,aa,\                     ; Settings icons and links [Blue]
     00,00,00,aa,\                     ; Startmenu background / Active taskbar button - IF "EnableTransparency"=dword:00000000
     00,00,00,aa,\                     ; Taskbar front and Folders on start list background [None]
     00,00,00,aa,\                     ; Taskbar background - IF "EnableTransparency"=dword:00000001
@@ -26,7 +26,7 @@ Windows Registry Editor Version 5.00
     b5,66,ff,aa,\                     ; Links in action center and apps, where [rr,gg,bb,aa] aa = alpha, ignored
     6c,3a,98,aa,\                     ; Taskbar icons underline
     8a,2c,dd,aa,\                     ; Start button hover
-    9d,5c,d6,aa,\                     ; Settings icons and links [Blue]
+    b5,66,ff,aa,\                     ; Settings icons and links [Blue]
     00,00,00,aa,\                     ; Startmenu background / Active taskbar button - IF "EnableTransparency"=dword:00000000
     00,00,00,aa,\                     ; Taskbar front and Folders on start list background [None]
     00,00,00,aa,\                     ; Taskbar background - IF "EnableTransparency"=dword:00000001
